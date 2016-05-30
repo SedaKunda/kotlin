@@ -85,17 +85,24 @@ class CoroutineCodegen(
 
         val resumeFunctionDescriptor =
                 createSynthesizedImplementationByName(
-                        "resume", interfaceSupertype = continuationSuperType, implementationClass = classDescriptor)
+                        "resume",
+                        interfaceSupertype = continuationSuperType,
+                        implementationClass = classDescriptor,
+                        sourceElement = funDescriptor.source)
 
         val resumeWithExceptionFunctionDescriptor =
                 createSynthesizedImplementationByName(
-                        "resumeWithException", interfaceSupertype = continuationSuperType, implementationClass = classDescriptor)
+                        "resumeWithException",
+                        interfaceSupertype = continuationSuperType,
+                        implementationClass = classDescriptor,
+                        sourceElement = funDescriptor.source)
 
         // private fun resume(result, throwable)
         val combinedResumeFunctionDescriptor =
                 resumeFunctionDescriptor.newCopyBuilder()
                         .setVisibility(Visibilities.PRIVATE)
                         .setCopyOverrides(false)
+                        .setPreserveSourceElement()
                         .setValueParameters(
                                 listOf(
                                         resumeFunctionDescriptor.valueParameters[0],
@@ -118,10 +125,11 @@ class CoroutineCodegen(
     private fun createSynthesizedImplementationByName(
             name: String,
             interfaceSupertype: KotlinType,
-            implementationClass: ClassDescriptor
+            implementationClass: ClassDescriptor,
+            sourceElement: SourceElement
     ): SimpleFunctionDescriptor {
         val inSuperType = interfaceSupertype.memberScope.getContributedFunctions(Name.identifier(name), NoLookupLocation.FROM_BACKEND).single()
-        val result = inSuperType.newCopyBuilder().setOwner(implementationClass).setModality(Modality.FINAL).build()!!
+        val result = inSuperType.newCopyBuilder().setSource(sourceElement).setOwner(implementationClass).setModality(Modality.FINAL).build()!!
         result.setSingleOverridden(inSuperType)
 
         return result
@@ -172,7 +180,7 @@ class CoroutineCodegen(
                     } ?: return null
 
             val functionDescriptorWithContinuationReturnType =
-                    functionDescriptor.newCopyBuilder().setReturnType(continuationSupertype).build()!!
+                    functionDescriptor.newCopyBuilder().setPreserveSourceElement().setReturnType(continuationSupertype).build()!!
 
             expressionCodegen.state.bindingTrace.record(
                     CodegenBinding.CLASS_FOR_CALLABLE, functionDescriptorWithContinuationReturnType, classDescriptor)
