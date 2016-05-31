@@ -19,62 +19,65 @@ package org.jetbrains.kotlin.load.java.lazy.types
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.descriptors.ClassDescriptor
 import org.jetbrains.kotlin.descriptors.TypeParameterDescriptor
+import org.jetbrains.kotlin.descriptors.annotations.Annotations
 import org.jetbrains.kotlin.load.java.components.TypeUsage
 import org.jetbrains.kotlin.renderer.DescriptorRenderer
+import org.jetbrains.kotlin.renderer.DescriptorRendererOptions
 import org.jetbrains.kotlin.resolve.descriptorUtil.builtIns
+import org.jetbrains.kotlin.resolve.scopes.MemberScope
 import org.jetbrains.kotlin.types.*
+import org.jetbrains.kotlin.types.checker.KotlinTypeChecker
+import org.jetbrains.kotlin.types.typeUtil.replaceAnnotations
 
-object RawTypeCapabilities : TypeCapabilities {
+class RawTypeImpl(lowerBound: SimpleType, upperBound: SimpleType) : DelegatingFlexibleType(lowerBound, upperBound), RawType {
+    init {
+        assert (KotlinTypeChecker.DEFAULT.isSubtypeOf(lowerBound, upperBound)) {
+            "Lower bound $lowerBound of a flexible type must be a subtype of the upper bound $upperBound"
+        }
+    }
+    override fun getDelegate(): KotlinType = delegateType
 
-    private object Impl : RawTypeCapability {
-        override val substitution: TypeSubstitution?
-            get() = RawSubstitution
-        override val substitutionToComposeWith: TypeSubstitution?
-            get() = RawSubstitution
+    override val delegateType: KotlinType get() = lowerBound
 
-        private fun DescriptorRenderer.renderArguments(jetType: KotlinType) = jetType.arguments.map { renderTypeProjection(it) }
+    override val memberScope: MemberScope
+        get() {
+            val classDescriptor = constructor.declarationDescriptor as? ClassDescriptor
+                                  ?: error("Incorrect classifier: ${constructor.declarationDescriptor}")
+            return classDescriptor.getMemberScope(RawSubstitution)
+        }
 
-        private fun String.replaceArgs(newArgs: String): String {
+    override fun replaceAnnotations(newAnnotations: Annotations): KotlinType
+            = RawTypeImpl(lowerBound.replaceAnnotations(newAnnotations).asSimpleType(), upperBound)
+
+    override fun makeNullableAsSpecified(nullable: Boolean): KotlinType
+            = RawTypeImpl(TypeUtils.makeNullableAsSpecified(lowerBound, nullable), TypeUtils.makeNullableAsSpecified(upperBound, nullable))
+
+    override fun render(renderer: DescriptorRenderer, options: DescriptorRendererOptions): String {
+        fun onlyOutDiffers(first: String, second: String) = first == second.removePrefix("out ") || second == "*"
+
+        fun renderArguments(type: KotlinType) = type.arguments.map { renderer.renderTypeProjection(it) }
+
+        fun String.replaceArgs(newArgs: String): String {
             if (!contains('<')) return this
             return "${substringBefore('<')}<$newArgs>${substringAfterLast('>')}"
         }
 
-        override fun renderInflexible(type: KotlinType, renderer: DescriptorRenderer): String? {
-            if (type.arguments.isNotEmpty()) return null
+        val lowerRendered = renderer.renderType(lowerBound)
+        val upperRendered = renderer.renderType(upperBound)
 
-            return buildString {
-                append(renderer.renderTypeConstructor(type.constructor))
-                append("(raw)")
-                if (type.isMarkedNullable) append('?')
-            }
+        if (options.debugMode) {
+            return "raw ($lowerRendered..$upperRendered)"
         }
+        if (upperBound.arguments.isEmpty()) return renderer.renderFlexibleType(lowerRendered, upperRendered)
 
-        override fun renderBounds(flexibleType: FlexibleType, renderer: DescriptorRenderer): Pair<String, String>? {
-            val lowerArgs = renderer.renderArguments(flexibleType.lowerBound)
-            val upperArgs = renderer.renderArguments(flexibleType.upperBound)
-
-            val lowerRendered = renderer.renderType(flexibleType.lowerBound)
-            val upperRendered = renderer.renderType(flexibleType.upperBound)
-
-            if (!upperArgs.isNotEmpty()) return null
-
-            val newArgs = lowerArgs.map { "(raw) $it" }.joinToString(", ")
-            val newUpper =
-                    if (lowerArgs.zip(upperArgs).all { onlyOutDiffers(it.first, it.second) })
-                        upperRendered.replaceArgs(newArgs)
-                    else upperRendered
-            return Pair(lowerRendered.replaceArgs(newArgs), newUpper)
-        }
-
-        private fun onlyOutDiffers(first: String, second: String) = first == second.removePrefix("out ") || second == "*"
-    }
-
-    override fun <T : TypeCapability> getCapability(capabilityClass: Class<T>): T? {
-        @Suppress("UNCHECKED_CAST")
-        return when(capabilityClass) {
-            RawTypeCapability::class.java -> Impl as T
-            else -> null
-        }
+        val lowerArgs = renderArguments(lowerBound)
+        val upperArgs = renderArguments(upperBound)
+        val newArgs = lowerArgs.map { "(raw) $it" }.joinToString(", ")
+        val newUpper =
+                if (lowerArgs.zip(upperArgs).all { onlyOutDiffers(it.first, it.second) })
+                    upperRendered.replaceArgs(newArgs)
+                else upperRendered
+        return renderer.renderFlexibleType(lowerRendered.replaceArgs(newArgs), newUpper)
     }
 }
 
@@ -89,40 +92,46 @@ internal object RawSubstitution : TypeSubstitution() {
         return when (declaration) {
             is TypeParameterDescriptor -> eraseType(declaration.getErasedUpperBound())
             is ClassDescriptor -> {
-                val lower = type.lowerIfFlexible()
-                val upper = type.upperIfFlexible()
-                KotlinTypeFactory.flexibleType(
-                        eraseInflexibleBasedOnClassDescriptor(lower, declaration, lowerTypeAttr),
-                        eraseInflexibleBasedOnClassDescriptor(upper, declaration, upperTypeAttr)
-                )
+                val (lower, isRawL) = eraseInflexibleBasedOnClassDescriptor(type.lowerIfFlexible(), declaration, lowerTypeAttr)
+                val (upper, isRawU) = eraseInflexibleBasedOnClassDescriptor(type.upperIfFlexible(), declaration, upperTypeAttr)
+
+                if (isRawL || isRawU) {
+                    RawTypeImpl(lower, upper)
+                }
+                else {
+                    KotlinTypeFactory.flexibleType(lower, upper)
+                }
             }
             else -> error("Unexpected declaration kind: $declaration")
         }
     }
 
-    private fun eraseInflexibleBasedOnClassDescriptor(type: KotlinType, declaration: ClassDescriptor, attr: JavaTypeAttributes): SimpleType {
+    private fun eraseInflexibleBasedOnClassDescriptor(
+            type: SimpleType, declaration: ClassDescriptor, attr: JavaTypeAttributes
+    ): Pair<SimpleType, Boolean> {
+        if (type.constructor.parameters.isEmpty()) return type to false
+
         if (KotlinBuiltIns.isArray(type)) {
             val componentTypeProjection = type.arguments[0]
             val arguments = listOf(
                     TypeProjectionImpl(componentTypeProjection.projectionKind, eraseType(componentTypeProjection.type))
             )
-            return KotlinTypeFactory.simpleType(type.annotations, type.constructor, arguments,
-                                                type.isMarkedNullable, (type.constructor.declarationDescriptor as ClassDescriptor).getMemberScope(arguments)
-            )
+            return KotlinTypeFactory.simpleType(
+                    type.annotations, type.constructor, arguments, type.isMarkedNullable,
+                    declaration.getMemberScope(arguments)
+            ) to false
         }
 
-        if (type.isError) return ErrorUtils.createErrorType("Raw error type: ${type.constructor}")
+        if (type.isError) return ErrorUtils.createErrorType("Raw error type: ${type.constructor}") to false
 
-        val constructor = type.constructor
-        return KotlinTypeImpl.create(
-                type.annotations, constructor, type.isMarkedNullable,
+        return KotlinTypeFactory.simpleType(
+                type.annotations, type.constructor,
                 type.constructor.parameters.map {
                     parameter ->
                     computeProjection(parameter, attr)
                 },
-                declaration.getMemberScope(RawSubstitution),
-                RawTypeCapabilities
-        )
+                type.isMarkedNullable, declaration.getMemberScope(RawSubstitution)
+        ) to true
     }
 
     fun computeProjection(
