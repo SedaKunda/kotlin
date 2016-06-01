@@ -82,6 +82,11 @@ public interface FunctionDescriptor extends CallableMemberDescriptor {
 
     boolean isSuspend();
 
+    interface UserDataKey<V> {}
+
+    @Nullable
+    <V> V getUserData(UserDataKey<V> key);
+
     @NotNull
     CopyBuilder<? extends FunctionDescriptor> newCopyBuilder();
 
@@ -145,6 +150,9 @@ public interface FunctionDescriptor extends CallableMemberDescriptor {
 
         @NotNull
         CopyBuilder<D> setSubstitution(@NotNull TypeSubstitution substitution);
+
+        @NotNull
+        <V> CopyBuilder<D> putUserData(@NotNull UserDataKey<V> userDataKey, V value);
 
         @Nullable
         D build();
