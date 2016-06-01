@@ -1471,6 +1471,12 @@ public class BlackBoxCodegenTestGenerated extends AbstractBlackBoxCodegenTest {
                     String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/codegen/box/callableReference/bound/inline/simple.kt");
                     doTest(fileName);
                 }
+
+                @TestMetadata("variableReceiver.kt")
+                public void testVariableReceiver() throws Exception {
+                    String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/codegen/box/callableReference/bound/inline/variableReceiver.kt");
+                    doTest(fileName);
+                }
             }
         }
 
