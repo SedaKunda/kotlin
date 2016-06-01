@@ -21,7 +21,7 @@ public/*package*/ open class Test {
     public open override /*1*/ /*fake_override*/ fun hashCode(): kotlin.Int
     public open override /*1*/ /*fake_override*/ fun toString(): kotlin.String
 
-    public/*package*/ open class RawADerived : A<(raw) kotlin.CharSequence!, (raw) kotlin.Any!>! {
+    public/*package*/ open class RawADerived : A<(raw) kotlin.CharSequence!, (raw) kotlin.Any!> {
         public/*package*/ constructor RawADerived()
         public/*package*/ final override /*1*/ /*fake_override*/ var arraysOfAny: kotlin.Array<(out) kotlin.Array<(out) kotlin.Any!>!>!
         public/*package*/ final override /*1*/ /*fake_override*/ var arraysOfLists: kotlin.Array<(out) kotlin.Array<(out) kotlin.collections.(Mutable)List<(raw) kotlin.Any?>!>!>!

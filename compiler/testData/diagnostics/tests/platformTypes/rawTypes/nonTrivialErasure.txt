@@ -19,7 +19,7 @@ public/*package*/ open class Test {
     public open override /*1*/ /*fake_override*/ fun hashCode(): kotlin.Int
     public open override /*1*/ /*fake_override*/ fun toString(): kotlin.String
 
-    public/*package*/ open class DerivedRawA : A<(raw) A<*, *, *>!, (raw) A<*, *, *>!, (raw) kotlin.collections.(Mutable)List<*>!>! {
+    public/*package*/ open class DerivedRawA : A<(raw) A<*, *, *>!, (raw) A<*, *, *>!, (raw) kotlin.collections.(Mutable)List<*>!> {
         public/*package*/ constructor DerivedRawA()
         public/*package*/ final override /*1*/ /*fake_override*/ var first: A<(raw) A<*, *, *>!, (raw) A<*, *, *>!, (raw) kotlin.collections.(Mutable)List<*>!>!
         public/*package*/ final override /*1*/ /*fake_override*/ var listOfDoubles: kotlin.collections.(Mutable)List<(raw) kotlin.Any?>!

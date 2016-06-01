@@ -77,15 +77,17 @@ class RawTypeImpl(lowerBound: SimpleType, upperBound: SimpleType) : DelegatingFl
                 if (lowerArgs.zip(upperArgs).all { onlyOutDiffers(it.first, it.second) })
                     upperRendered.replaceArgs(newArgs)
                 else upperRendered
-        return renderer.renderFlexibleType(lowerRendered.replaceArgs(newArgs), newUpper)
+        val newLower = lowerRendered.replaceArgs(newArgs)
+        if (newLower == newUpper) return newLower
+        return renderer.renderFlexibleType(newLower, newUpper)
     }
 }
 
 internal object RawSubstitution : TypeSubstitution() {
     override fun get(key: KotlinType) = TypeProjectionImpl(eraseType(key))
 
-    private val lowerTypeAttr = TypeUsage.MEMBER_SIGNATURE_INVARIANT.toAttributes().toFlexible(JavaTypeFlexibility.FLEXIBLE_LOWER_BOUND)
-    private val upperTypeAttr = TypeUsage.MEMBER_SIGNATURE_INVARIANT.toAttributes().toFlexible(JavaTypeFlexibility.FLEXIBLE_UPPER_BOUND)
+    private val lowerTypeAttr = TypeUsage.MEMBER_SIGNATURE_INVARIANT.toAttributes().toRawBound(RawBound.LOWER)
+    private val upperTypeAttr = TypeUsage.MEMBER_SIGNATURE_INVARIANT.toAttributes().toRawBound(RawBound.UPPER)
 
     fun eraseType(type: KotlinType): KotlinType {
         val declaration = type.constructor.declarationDescriptor
@@ -138,18 +140,18 @@ internal object RawSubstitution : TypeSubstitution() {
             parameter: TypeParameterDescriptor,
             attr: JavaTypeAttributes,
             erasedUpperBound: KotlinType = parameter.getErasedUpperBound()
-    ) = when (attr.flexibility) {
+    ) = when (attr.rawBound) {
         // Raw(List<T>) => (List<Any?>..List<*>)
         // Raw(Enum<T>) => (Enum<Enum<*>>..Enum<out Enum<*>>)
         // In the last case upper bound is equal to star projection `Enum<*>`,
         // but we want to keep matching tree structure of flexible bounds (at least they should have the same size)
-        JavaTypeFlexibility.FLEXIBLE_LOWER_BOUND -> TypeProjectionImpl(
+        RawBound.LOWER -> TypeProjectionImpl(
                 // T : String -> String
                 // in T : String -> String
                 // T : Enum<T> -> Enum<*>
                 Variance.INVARIANT, erasedUpperBound
         )
-        JavaTypeFlexibility.FLEXIBLE_UPPER_BOUND, JavaTypeFlexibility.INFLEXIBLE -> {
+        RawBound.UPPER, RawBound.NOT_RAW -> {
             if (!parameter.variance.allowsOutPosition)
                 // in T -> Comparable<Nothing>
                 TypeProjectionImpl(Variance.INVARIANT, parameter.builtIns.nothingType)

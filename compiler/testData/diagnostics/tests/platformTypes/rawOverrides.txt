@@ -9,7 +9,7 @@ public interface A</*0*/ T : kotlin.Any!> {
     public open override /*1*/ /*fake_override*/ fun toString(): kotlin.String
 }
 
-public interface B : A<(raw) kotlin.Any!>! {
+public interface B : A<(raw) kotlin.Any!> {
     public open override /*1*/ /*fake_override*/ fun equals(/*0*/ other: kotlin.Any?): kotlin.Boolean
     @java.lang.Override() public abstract override /*1*/ fun foo(/*0*/ x: kotlin.Any!, /*1*/ y: kotlin.collections.(Mutable)List<(raw) kotlin.Any?>!): kotlin.String!
     public open override /*1*/ /*fake_override*/ fun hashCode(): kotlin.Int

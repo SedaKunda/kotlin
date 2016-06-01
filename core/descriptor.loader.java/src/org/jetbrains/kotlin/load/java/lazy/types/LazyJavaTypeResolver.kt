@@ -54,13 +54,7 @@ class LazyJavaTypeResolver(
                 if (primitiveType != null) c.module.builtIns.getPrimitiveKotlinType(primitiveType)
                 else c.module.builtIns.getUnitType()
             }
-            is JavaClassifierType ->
-                if (attr.allowFlexible && (javaType.isRaw || attr.howThisTypeIsUsed != SUPERTYPE))
-                    flexibleOrRaw(
-                            LazyJavaClassifierType(javaType, attr.toFlexible(FLEXIBLE_LOWER_BOUND)),
-                            LazyJavaClassifierType(javaType, attr.toFlexible(FLEXIBLE_UPPER_BOUND))
-                    )
-                else LazyJavaClassifierType(javaType, attr)
+            is JavaClassifierType -> transformJavaClassifierType(javaType, attr)
             is JavaArrayType -> transformArrayType(javaType, attr)
             // Top level type can be a wildcard only in case of broken Java code, but we should not fail with exceptions in such cases
             is JavaWildcardType -> javaType.bound?.let { transformJavaType(it, attr) } ?: c.module.builtIns.defaultBound
@@ -68,12 +62,24 @@ class LazyJavaTypeResolver(
         }
     }
 
-    private fun flexibleOrRaw(lower: LazyJavaClassifierType, upper: LazyJavaClassifierType): KotlinType {
-        if (lower.isRaw() || upper.isRaw()) {
-            return RawTypeImpl(lower, upper)
+    private fun transformJavaClassifierType(javaType: JavaClassifierType, attr: JavaTypeAttributes): KotlinType {
+        val allowFlexible = attr.allowFlexible && attr.howThisTypeIsUsed != SUPERTYPE
+
+        val lowerAttr = if (allowFlexible) attr.toFlexible(FLEXIBLE_LOWER_BOUND) else attr
+        val upperAttr = if (allowFlexible) attr.toFlexible(FLEXIBLE_UPPER_BOUND) else attr
+
+        return if (javaType.isRaw) {
+            RawTypeImpl(LazyJavaClassifierType(javaType, lowerAttr.toRawBound(RawBound.LOWER)),
+                               LazyJavaClassifierType(javaType, upperAttr.toRawBound(RawBound.UPPER)))
+        }
+        else if (allowFlexible) {
+            KotlinTypeFactory.flexibleType(
+                    LazyJavaClassifierType(javaType, lowerAttr),
+                    LazyJavaClassifierType(javaType, upperAttr)
+            )
         }
         else {
-            return KotlinTypeFactory.flexibleType(lower, upper)
+            LazyJavaClassifierType(javaType, attr)
         }
     }
 
@@ -185,19 +191,18 @@ class LazyJavaTypeResolver(
 
         private fun JavaType?.isSuperWildcard(): Boolean = (this as? JavaWildcardType)?.let { it.bound != null && !it.isExtends } ?: false
 
-        internal fun isRaw(): Boolean {
-            if (javaType.isRaw) return true
+        private fun eraseTypeParameters(): Boolean {
+            if (attr.rawBound != RawBound.NOT_RAW) return true
 
             // This option is needed because sometimes we get weird versions of JDK classes in the class path,
             // such as collections with no generics, so the Java types are not raw, formally, but they don't match with
             // their Kotlin analogs, so we treat them as raw to avoid exceptions
-            // No type arguments, but some are expected => raw
             return javaType.typeArguments.isEmpty() && !constructor.parameters.isEmpty()
         }
 
         override fun computeArguments(): List<TypeProjection> {
             val typeParameters = constructor.parameters
-            if (isRaw()) {
+            if (eraseTypeParameters()) {
                 return typeParameters.map {
                     parameter ->
                     // Some activity for preventing recursion in cases like `class A<T extends A, F extends T>`
@@ -313,6 +318,14 @@ interface JavaTypeAttributes {
     // Current type is upper bound of this type parameter
     val upperBoundOfTypeParameter: TypeParameterDescriptor?
         get() = null
+    val rawBound: RawBound
+        get() = RawBound.NOT_RAW
+}
+
+enum class RawBound {
+    LOWER,
+    UPPER,
+    NOT_RAW
 }
 
 enum class JavaTypeFlexibility {
@@ -363,6 +376,11 @@ fun TypeUsage.toAttributes(
 fun JavaTypeAttributes.toFlexible(flexibility: JavaTypeFlexibility) =
         object : JavaTypeAttributes by this {
             override val flexibility = flexibility
+        }
+
+fun JavaTypeAttributes.toRawBound(rawBound: RawBound) =
+        object : JavaTypeAttributes by this {
+            override val rawBound = rawBound
         }
 
 
