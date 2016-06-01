@@ -2538,8 +2538,8 @@ public class ExpressionCodegen extends KtVisitor<StackValue, StackValue> impleme
             @NotNull CallGenerator callGenerator,
             @NotNull ArgumentGenerator argumentGenerator
     ) {
-        boolean isCallToSuspendFunction = isCallToSuspendFunction(resolvedCall);
-        if (isCallToSuspendFunction) {
+        boolean isSuspensionPoint = CoroutineCodegenUtilKt.isSuspensionPoint(resolvedCall);
+        if (isSuspensionPoint) {
             // Inline markers are used to spill the stack before coroutine suspension
             addInlineMarker(v, true);
         }
@@ -2575,7 +2575,7 @@ public class ExpressionCodegen extends KtVisitor<StackValue, StackValue> impleme
             }
         }
 
-        if (isCallToSuspendFunction) {
+        if (isSuspensionPoint) {
             v.invokestatic(
                     CoroutineCodegenUtilKt.SUSPENSION_POINT_MARKER_OWNER,
                     CoroutineCodegenUtilKt.SUSPENSION_POINT_MARKER_NAME, "()V", false);
@@ -2583,7 +2583,7 @@ public class ExpressionCodegen extends KtVisitor<StackValue, StackValue> impleme
 
         callGenerator.genCall(callableMethod, resolvedCall, defaultMaskWasGenerated, this);
 
-        if (isCallToSuspendFunction) {
+        if (isSuspensionPoint) {
             addInlineMarker(v, false);
         }
 
@@ -2592,11 +2592,6 @@ public class ExpressionCodegen extends KtVisitor<StackValue, StackValue> impleme
             v.aconst(null);
             v.athrow();
         }
-    }
-
-    private static boolean isCallToSuspendFunction(@NotNull ResolvedCall<?> resolvedCall) {
-        CallableDescriptor descriptor = resolvedCall.getResultingDescriptor();
-        return descriptor instanceof FunctionDescriptor && ((FunctionDescriptor) descriptor).isSuspend();
     }
 
     @NotNull
