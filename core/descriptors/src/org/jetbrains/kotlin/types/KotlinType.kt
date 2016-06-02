@@ -48,11 +48,8 @@ sealed class KotlinType : Annotated {
     }
 
     final override fun equals(other: Any?): Boolean {
-        if (isError) return super.equals(other)
-
         if (this === other) return true
         if (other !is KotlinType) return false
-        if (other.isError) return false
 
         return isMarkedNullable == other.isMarkedNullable && KotlinTypeChecker.FLEXIBLE_UNEQUAL_TO_INFLEXIBLE.equalTypes(this, other)
     }
